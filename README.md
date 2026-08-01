@@ -7,7 +7,8 @@ survival mode, plus an embedded web dashboard and Prometheus metrics.
 
 - Incoming queries (UDP/TCP/DoT/DoH) are answered from the in-memory cache
   ([otter](https://github.com/maypok86/otter), per-entry TTL) when possible.
-- On a miss, **all** configured backend servers are queried concurrently and the
+- On a miss, the backend servers whose **routing suffix** matches the query
+  name (see below; by default all of them) are queried concurrently and the
   fastest non-empty response wins. If every server answers empty, an empty
   response is served.
 - Every backend answer is persisted to the **record book**
@@ -23,7 +24,7 @@ survival mode, plus an embedded web dashboard and Prometheus metrics.
 
 | Variable | Default | Description |
 |---|---|---|
-| `LIGHTHOUSE_BACKENDS` | *(required)* | Comma-separated backend URIs: `udp://1.1.1.1:53,tcp://9.9.9.9:53,tls://8.8.8.8:853,https://dns.google/dns-query` |
+| `LIGHTHOUSE_BACKENDS` | *(required)* | Comma-separated backend URIs: `udp://1.1.1.1:53,tcp://9.9.9.9:53,tls://8.8.8.8:853,https://dns.google/dns-query`. Each URI accepts an optional `?suffix=` routing suffix (see [Suffix routing](#suffix-routing)) |
 | `LIGHTHOUSE_LISTEN_UDP` | `:53` | UDP listener (empty to disable) |
 | `LIGHTHOUSE_LISTEN_TCP` | `:53` | TCP listener (empty to disable) |
 | `LIGHTHOUSE_LISTEN_DOT` | | DoT listener, e.g. `:853` |
@@ -41,6 +42,37 @@ survival mode, plus an embedded web dashboard and Prometheus metrics.
 | `LIGHTHOUSE_HTTP_ADDR` | `:8080` | Dashboard + JSON API |
 | `LIGHTHOUSE_OPS_ADDR` | `:9090` | `/metrics`, `/healthz`, `/readyz` |
 | `LIGHTHOUSE_LOG_LEVEL` | `info` | slog level (JSON logs on stdout) |
+
+## Suffix routing
+
+Each backend URI may carry a `suffix` query parameter naming the DNS zone it
+serves. On a cache miss, a query is routed only to the backends whose suffix
+matches the query name — and among matching suffixes, only the **most
+specific** one (most labels) wins. Backends without a suffix serve `.`
+(everything) and act as the catch-all.
+
+```sh
+LIGHTHOUSE_BACKENDS="udp://1.1.1.1:53,udp://10.96.0.10:53?suffix=cluster.local."
+```
+
+With this configuration:
+
+- `foo.svc.cluster.local.` → only `10.96.0.10` (suffix `cluster.local.` beats `.`)
+- `example.com.` → only `1.1.1.1` (the catch-all)
+
+Notes:
+
+- The suffix is case-insensitive; leading/trailing dots are optional
+  (`cluster.local`, `.cluster.local.`, and `CLUSTER.LOCAL` are equivalent).
+  A name equal to the suffix itself also matches.
+- Several backends may share the same suffix; they are fanned out together
+  and the fastest non-empty answer wins, as usual.
+- If every backend has a suffix and none matches a query, the query fails
+  (SERVFAIL) — keep at least one catch-all backend unless that is intended.
+- For DoH backends the `suffix` parameter is stripped before the URL is used
+  as the endpoint.
+- Routing applies to resolution only; the health beacon and dashboard probes
+  still check **all** backends regardless of suffix.
 
 ## Build & run
 

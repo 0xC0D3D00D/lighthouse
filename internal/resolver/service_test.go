@@ -71,6 +71,63 @@ func newService(t *testing.T, addrs []string) (*resolver.Service, mocks) {
 	return svc, m
 }
 
+func newServiceBackends(t *testing.T, backends []model.Backend) (*resolver.Service, mocks) {
+	t.Helper()
+	m := mocks{
+		cache:  resolvermock.NewMockCache(t),
+		book:   resolvermock.NewMockRecordBook(t),
+		health: resolvermock.NewMockHealth(t),
+	}
+	svc := resolver.New(backends, backend.NewClient(2*time.Second), m.cache, m.book, m.health, false, slog.New(slog.DiscardHandler))
+	return svc, m
+}
+
+func TestResolveRoutesBySuffix(t *testing.T) {
+	catchAllAddr := startBackend(t, true) // empty answers
+	suffixAddr := startBackend(t, false)  // answers 1.2.3.4
+	svc, m := newServiceBackends(t, []model.Backend{
+		{Scheme: "udp", Address: catchAllAddr, Suffix: "."},
+		{Scheme: "udp", Address: suffixAddr, Suffix: "cluster.local."},
+	})
+
+	// A cluster.local. query goes only to the suffix backend and gets an answer.
+	m.cache.EXPECT().Get("foo.svc.cluster.local.", dns.TypeA).Return(nil, false)
+	m.book.EXPECT().LookupManualPacked("foo.svc.cluster.local.", dns.TypeA).Return(nil, 0, false)
+	m.health.EXPECT().Survival().Return(false)
+	m.cache.EXPECT().Set("foo.svc.cluster.local.", dns.TypeA, mock.Anything, mock.Anything).Return()
+	m.book.EXPECT().Save("foo.svc.cluster.local.", dns.TypeA, mock.Anything, mock.Anything, mock.Anything, 1, mock.Anything).Return(nil)
+
+	res, err := svc.Resolve(context.Background(), "foo.svc.cluster.local.", dns.TypeA)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.AnswerCount)
+	assert.Equal(t, "udp://"+suffixAddr, res.Source)
+
+	// A non-matching query goes only to the catch-all backend: the suffix
+	// backend would answer non-empty, so an empty result proves it was skipped.
+	m.cache.EXPECT().Get("example.com.", dns.TypeA).Return(nil, false)
+	m.book.EXPECT().LookupManualPacked("example.com.", dns.TypeA).Return(nil, 0, false)
+	m.health.EXPECT().Survival().Return(false)
+
+	res, err = svc.Resolve(context.Background(), "example.com.", dns.TypeA)
+	require.NoError(t, err)
+	assert.Equal(t, 0, res.AnswerCount)
+}
+
+func TestResolveNoMatchingBackend(t *testing.T) {
+	addr := startBackend(t, false)
+	svc, m := newServiceBackends(t, []model.Backend{
+		{Scheme: "udp", Address: addr, Suffix: "cluster.local."},
+	})
+
+	m.cache.EXPECT().Get("example.com.", dns.TypeA).Return(nil, false)
+	m.book.EXPECT().LookupManualPacked("example.com.", dns.TypeA).Return(nil, 0, false)
+	m.health.EXPECT().Survival().Return(false)
+
+	_, err := svc.Resolve(context.Background(), "example.com.", dns.TypeA)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no backend serves")
+}
+
 func TestResolveCacheHit(t *testing.T) {
 	svc, m := newService(t, []string{"127.0.0.1:1"})
 	m.cache.EXPECT().Get("example.com.", dns.TypeA).Return([]byte{0xaa, 0xbb}, true)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -20,6 +21,9 @@ type Backend struct {
 	Address string
 	// URL is the full DoH endpoint for https backends.
 	URL string
+	// Suffix is the DNS name suffix this backend serves, as a canonical
+	// fully-qualified lowercase name. "." (the default) matches every name.
+	Suffix string
 }
 
 // Config is populated from LIGHTHOUSE_-prefixed environment variables.
@@ -88,6 +92,10 @@ func (c Config) ParsedBackends() ([]Backend, error) {
 		if err != nil {
 			return nil, fmt.Errorf("backend %q: %w", raw, err)
 		}
+		suffix, err := backendSuffix(u)
+		if err != nil {
+			return nil, fmt.Errorf("backend %q: %w", raw, err)
+		}
 		switch u.Scheme {
 		case "udp", "tcp", "tls":
 			host := u.Host
@@ -98,9 +106,14 @@ func (c Config) ParsedBackends() ([]Backend, error) {
 				}
 				host = fmt.Sprintf("%s:%s", u.Hostname(), port)
 			}
-			ups = append(ups, Backend{Scheme: u.Scheme, Address: host})
+			ups = append(ups, Backend{Scheme: u.Scheme, Address: host, Suffix: suffix})
 		case "https":
-			ups = append(ups, Backend{Scheme: "https", URL: raw})
+			// The suffix param is lighthouse routing config, not part of the
+			// DoH endpoint; strip it before storing the URL.
+			q := u.Query()
+			q.Del("suffix")
+			u.RawQuery = q.Encode()
+			ups = append(ups, Backend{Scheme: "https", URL: u.String(), Suffix: suffix})
 		default:
 			return nil, fmt.Errorf("backend %q: unsupported scheme %q", raw, u.Scheme)
 		}
@@ -109,4 +122,24 @@ func (c Config) ParsedBackends() ([]Backend, error) {
 		return nil, fmt.Errorf("no backends configured")
 	}
 	return ups, nil
+}
+
+// backendSuffix extracts and canonicalizes the optional ?suffix= query
+// parameter: lowercase, fully qualified (trailing dot). Absent or empty means
+// ".", the catch-all suffix.
+func backendSuffix(u *url.URL) (string, error) {
+	s := strings.ToLower(strings.TrimSpace(u.Query().Get("suffix")))
+	if s == "" || s == "." {
+		return ".", nil
+	}
+	if !strings.HasSuffix(s, ".") {
+		s += "."
+	}
+	trimmed := strings.TrimPrefix(s, ".")
+	for _, label := range strings.Split(strings.TrimSuffix(trimmed, "."), ".") {
+		if label == "" {
+			return "", fmt.Errorf("invalid suffix %q: empty label", s)
+		}
+	}
+	return trimmed, nil
 }

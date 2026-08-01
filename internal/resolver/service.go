@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"codeberg.org/miekg/dns"
@@ -125,6 +126,38 @@ func (s *Service) Requery(ctx context.Context, name string, qtype uint16) (model
 	return res, nil
 }
 
+// backendsFor selects the backends whose suffix routes the given name: among
+// the suffixes that match, only the most specific one (most labels) wins, and
+// every backend configured with that winning suffix is returned. The catch-all
+// "." suffix is the least specific.
+func (s *Service) backendsFor(name string) []model.Backend {
+	best := -1
+	var out []model.Backend
+	for _, up := range s.backends {
+		if !up.Matches(name) {
+			continue
+		}
+		spec := suffixSpecificity(up.Suffix)
+		switch {
+		case spec > best:
+			best = spec
+			out = out[:0]
+			out = append(out, up)
+		case spec == best:
+			out = append(out, up)
+		}
+	}
+	return out
+}
+
+// suffixSpecificity is the number of labels in a canonical suffix; "." is 0.
+func suffixSpecificity(suffix string) int {
+	if suffix == "" || suffix == "." {
+		return 0
+	}
+	return strings.Count(suffix, ".")
+}
+
 // fanOut queries all backends concurrently and returns the fastest non-empty
 // response; if every backend answers empty, the first successful (empty)
 // response is returned; if all fail, an error is returned.
@@ -133,11 +166,16 @@ func (s *Service) fanOut(ctx context.Context, name string, qtype uint16) (model.
 		res model.Result
 		err error
 	}
+	backends := s.backendsFor(name)
+	if len(backends) == 0 {
+		return model.Result{}, fmt.Errorf("no backend serves %q", name)
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	ch := make(chan answer, len(s.backends))
-	for _, up := range s.backends {
+	ch := make(chan answer, len(backends))
+	for _, up := range backends {
 		go func(up model.Backend) {
 			metrics.BackendQueries.WithLabelValues(up.Name()).Inc()
 			resp, err := s.client.Query(ctx, up, name, qtype)
@@ -152,7 +190,7 @@ func (s *Service) fanOut(ctx context.Context, name string, qtype uint16) (model.
 
 	var firstEmpty *model.Result
 	var lastErr error
-	for range s.backends {
+	for range backends {
 		a := <-ch
 		if a.err != nil {
 			lastErr = a.err

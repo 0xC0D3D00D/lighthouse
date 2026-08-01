@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Backend is a resolver-level view of an backend DNS server.
 type Backend struct {
@@ -10,6 +13,18 @@ type Backend struct {
 	Address string
 	// URL is the DoH endpoint (https).
 	URL string
+	// Suffix is the canonical fully-qualified lowercase name suffix this
+	// backend serves; "." matches every name.
+	Suffix string
+}
+
+// Matches reports whether the backend serves the given canonical FQDN.
+func (u Backend) Matches(name string) bool {
+	if u.Suffix == "" || u.Suffix == "." {
+		return true
+	}
+	name = strings.ToLower(name)
+	return name == u.Suffix || strings.HasSuffix(name, "."+u.Suffix)
 }
 
 func (u Backend) Name() string {

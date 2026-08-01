@@ -63,7 +63,7 @@ func run() error {
 	}
 	ups := make([]resolvermodel.Backend, 0, len(cfgUps))
 	for _, u := range cfgUps {
-		ups = append(ups, resolvermodel.Backend{Scheme: u.Scheme, Address: u.Address, URL: u.URL})
+		ups = append(ups, resolvermodel.Backend{Scheme: u.Scheme, Address: u.Address, URL: u.URL, Suffix: u.Suffix})
 	}
 
 	// Services.
