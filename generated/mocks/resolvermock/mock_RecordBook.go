@@ -180,16 +180,16 @@ func (_c *MockRecordBook_LookupPacked_Call) RunAndReturn(run func(name string, q
 }
 
 // Save provides a mock function for the type MockRecordBook
-func (_mock *MockRecordBook) Save(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int) error {
-	ret := _mock.Called(name, qtype, packed, ttl, rcode, answers)
+func (_mock *MockRecordBook) Save(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int, source string) error {
+	ret := _mock.Called(name, qtype, packed, ttl, rcode, answers, source)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Save")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(string, uint16, []byte, time.Duration, uint16, int) error); ok {
-		r0 = returnFunc(name, qtype, packed, ttl, rcode, answers)
+	if returnFunc, ok := ret.Get(0).(func(string, uint16, []byte, time.Duration, uint16, int, string) error); ok {
+		r0 = returnFunc(name, qtype, packed, ttl, rcode, answers, source)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -208,11 +208,12 @@ type MockRecordBook_Save_Call struct {
 //   - ttl time.Duration
 //   - rcode uint16
 //   - answers int
-func (_e *MockRecordBook_Expecter) Save(name any, qtype any, packed any, ttl any, rcode any, answers any) *MockRecordBook_Save_Call {
-	return &MockRecordBook_Save_Call{Call: _e.mock.On("Save", name, qtype, packed, ttl, rcode, answers)}
+//   - source string
+func (_e *MockRecordBook_Expecter) Save(name any, qtype any, packed any, ttl any, rcode any, answers any, source any) *MockRecordBook_Save_Call {
+	return &MockRecordBook_Save_Call{Call: _e.mock.On("Save", name, qtype, packed, ttl, rcode, answers, source)}
 }
 
-func (_c *MockRecordBook_Save_Call) Run(run func(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int)) *MockRecordBook_Save_Call {
+func (_c *MockRecordBook_Save_Call) Run(run func(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int, source string)) *MockRecordBook_Save_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 string
 		if args[0] != nil {
@@ -238,6 +239,10 @@ func (_c *MockRecordBook_Save_Call) Run(run func(name string, qtype uint16, pack
 		if args[5] != nil {
 			arg5 = args[5].(int)
 		}
+		var arg6 string
+		if args[6] != nil {
+			arg6 = args[6].(string)
+		}
 		run(
 			arg0,
 			arg1,
@@ -245,6 +250,7 @@ func (_c *MockRecordBook_Save_Call) Run(run func(name string, qtype uint16, pack
 			arg3,
 			arg4,
 			arg5,
+			arg6,
 		)
 	})
 	return _c
@@ -255,7 +261,7 @@ func (_c *MockRecordBook_Save_Call) Return(err error) *MockRecordBook_Save_Call 
 	return _c
 }
 
-func (_c *MockRecordBook_Save_Call) RunAndReturn(run func(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int) error) *MockRecordBook_Save_Call {
+func (_c *MockRecordBook_Save_Call) RunAndReturn(run func(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int, source string) error) *MockRecordBook_Save_Call {
 	_c.Call.Return(run)
 	return _c
 }

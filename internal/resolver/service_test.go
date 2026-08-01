@@ -89,7 +89,7 @@ func TestResolveFanOutStoresResult(t *testing.T) {
 	m.book.EXPECT().LookupManualPacked("example.com.", dns.TypeA).Return(nil, 0, false)
 	m.health.EXPECT().Survival().Return(false)
 	m.cache.EXPECT().Set("example.com.", dns.TypeA, mock.Anything, 300*time.Second).Return()
-	m.book.EXPECT().Save("example.com.", dns.TypeA, mock.Anything, 300*time.Second, uint16(dns.RcodeSuccess), 1).Return(nil)
+	m.book.EXPECT().Save("example.com.", dns.TypeA, mock.Anything, 300*time.Second, uint16(dns.RcodeSuccess), 1, mock.Anything).Return(nil)
 
 	res, err := svc.Resolve(context.Background(), "example.com.", dns.TypeA)
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func TestResolvePrefersNonEmpty(t *testing.T) {
 	m.book.EXPECT().LookupManualPacked("example.com.", dns.TypeA).Return(nil, 0, false)
 	m.health.EXPECT().Survival().Return(false)
 	m.cache.EXPECT().Set("example.com.", dns.TypeA, mock.Anything, mock.Anything).Return()
-	m.book.EXPECT().Save("example.com.", dns.TypeA, mock.Anything, mock.Anything, mock.Anything, 1).Return(nil)
+	m.book.EXPECT().Save("example.com.", dns.TypeA, mock.Anything, mock.Anything, mock.Anything, 1, mock.Anything).Return(nil)
 
 	res, err := svc.Resolve(context.Background(), "example.com.", dns.TypeA)
 	require.NoError(t, err)

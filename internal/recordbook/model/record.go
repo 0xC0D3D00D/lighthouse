@@ -27,6 +27,10 @@ type Record struct {
 	Rcode uint16 `json:"rcode"`
 	// AnswerCount is the number of answer RRs in the stored response.
 	AnswerCount int `json:"answer_count"`
+	// Source traces where the answer came from: the backend name (e.g.
+	// "udp://1.1.1.1:53") for resolver saves, or "manual" for operator-added
+	// records. Empty for records stored before source tracking existed.
+	Source string `json:"source"`
 	// Manual marks a record added by an operator through the dashboard. Manual
 	// records are the source of truth: backend answers never overwrite them and
 	// they are served ahead of backend queries.

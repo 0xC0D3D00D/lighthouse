@@ -9,6 +9,7 @@ interface RecordView {
   answers: string[] | null
   expired: boolean
   manual: boolean
+  source: string
 }
 
 const QTYPES: Record<number, string> = {
@@ -136,6 +137,7 @@ async function addRecord() {
             <th class="px-4 py-2 font-medium">Type</th>
             <th class="px-4 py-2 font-medium">Answers</th>
             <th class="px-4 py-2 font-medium">TTL</th>
+            <th class="px-4 py-2 font-medium">Source</th>
             <th class="px-4 py-2 font-medium">Queried at</th>
             <th class="px-4 py-2 font-medium text-right">Actions</th>
           </tr>
@@ -149,7 +151,6 @@ async function addRecord() {
             <td class="px-4 py-2 font-mono">{{ rec.name }}</td>
             <td class="px-4 py-2">
               <UBadge variant="subtle">{{ qtypeName(rec.qtype) }}</UBadge>
-              <UBadge v-if="rec.manual" color="info" variant="subtle" class="ms-1">manual</UBadge>
             </td>
             <td class="px-4 py-2 font-mono text-xs whitespace-pre-line max-w-md truncate">
               {{ rec.answers?.length ? rec.answers.join('\n') : '—' }}
@@ -158,6 +159,7 @@ async function addRecord() {
               <span :class="rec.expired ? 'text-error' : ''">{{ rec.ttl }}s</span>
               <UBadge v-if="rec.expired" color="warning" variant="subtle" class="ms-1">expired</UBadge>
             </td>
+            <td class="px-4 py-2 font-mono text-xs text-muted">{{ rec.source || '—' }}</td>
             <td class="px-4 py-2 text-muted">{{ new Date(rec.queried_at).toLocaleString() }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               <UButton
@@ -179,7 +181,7 @@ async function addRecord() {
             </td>
           </tr>
           <tr v-if="!data?.records?.length">
-            <td colspan="6" class="px-4 py-8 text-center text-muted">No records found.</td>
+            <td colspan="7" class="px-4 py-8 text-center text-muted">No records found.</td>
           </tr>
         </tbody>
       </table>

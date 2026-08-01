@@ -23,7 +23,7 @@ type Cache interface {
 
 // RecordBook is the resolver's view of the persistent record book.
 type RecordBook interface {
-	Save(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int) error
+	Save(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int, source string) error
 	LookupPacked(name string, qtype uint16) (packed []byte, ok bool)
 	LookupManualPacked(name string, qtype uint16) (packed []byte, ttl time.Duration, ok bool)
 }
@@ -90,7 +90,7 @@ func (s *Service) Resolve(ctx context.Context, name string, qtype uint16) (model
 		s.cache.Set(name, qtype, res.Packed, res.TTL)
 	}
 	if res.AnswerCount > 0 || s.storeNeg {
-		if err := s.recordBook.Save(name, qtype, res.Packed, res.TTL, res.Rcode, res.AnswerCount); err != nil && !errors.Is(err, rbmodel.ErrManualRecord) {
+		if err := s.recordBook.Save(name, qtype, res.Packed, res.TTL, res.Rcode, res.AnswerCount, res.Source); err != nil && !errors.Is(err, rbmodel.ErrManualRecord) {
 			s.log.Warn("record book save failed", "name", name, "qtype", qtype, "err", err)
 		}
 	}
@@ -115,7 +115,7 @@ func (s *Service) Requery(ctx context.Context, name string, qtype uint16) (model
 		s.cache.Set(name, qtype, res.Packed, res.TTL)
 	}
 	if res.AnswerCount > 0 || s.storeNeg {
-		if err := s.recordBook.Save(name, qtype, res.Packed, res.TTL, res.Rcode, res.AnswerCount); err != nil {
+		if err := s.recordBook.Save(name, qtype, res.Packed, res.TTL, res.Rcode, res.AnswerCount, res.Source); err != nil {
 			if errors.Is(err, rbmodel.ErrManualRecord) {
 				return model.Result{}, fmt.Errorf("%s/%d: %w", name, qtype, rbmodel.ErrManualRecord)
 			}

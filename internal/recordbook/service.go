@@ -41,10 +41,10 @@ func (s *Service) keyLock(name string, qtype uint16) *sync.Mutex {
 	return &s.locks[h.Sum32()%lockStripes]
 }
 
-// Save persists a backend answer along with its (informational) TTL and the
-// query date. It is rejected with ErrManualRecord if the key holds a manually
-// added record, which is the source of truth.
-func (s *Service) Save(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int) error {
+// Save persists a backend answer along with its (informational) TTL, the
+// query date and the backend it came from. It is rejected with ErrManualRecord
+// if the key holds a manually added record, which is the source of truth.
+func (s *Service) Save(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int, source string) error {
 	mu := s.keyLock(name, qtype)
 	mu.Lock()
 	defer mu.Unlock()
@@ -64,6 +64,7 @@ func (s *Service) Save(name string, qtype uint16, packed []byte, ttl time.Durati
 		QueriedAt:   time.Now(),
 		Rcode:       rcode,
 		AnswerCount: answers,
+		Source:      source,
 	})
 }
 
@@ -83,6 +84,7 @@ func (s *Service) SaveManual(name string, qtype uint16, packed []byte, ttl time.
 		QueriedAt:   time.Now(),
 		Rcode:       0,
 		AnswerCount: answers,
+		Source:      "manual",
 		Manual:      true,
 	})
 }

@@ -19,7 +19,7 @@ func newService(t *testing.T) *Service {
 
 func save(t *testing.T, s *Service, name string, qtype uint16) {
 	t.Helper()
-	require.NoError(t, s.Save(name, qtype, []byte{0xde, 0xad}, 300*time.Second, 0, 1))
+	require.NoError(t, s.Save(name, qtype, []byte{0xde, 0xad}, 300*time.Second, 0, 1, "udp://1.1.1.1:53"))
 }
 
 func TestSaveLookupDelete(t *testing.T) {
@@ -31,6 +31,7 @@ func TestSaveLookupDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "example.com.", got.Name)
 	assert.EqualValues(t, 300, got.TTL)
+	assert.Equal(t, "udp://1.1.1.1:53", got.Source)
 	assert.EqualValues(t, 1, s.Count())
 
 	packed, ok := s.LookupPacked("example.com.", 1)
@@ -62,11 +63,12 @@ func TestSaveManualOverwritesAndPins(t *testing.T) {
 	got, err := s.Lookup("pin.example.", 1)
 	require.NoError(t, err)
 	assert.True(t, got.Manual)
+	assert.Equal(t, "manual", got.Source)
 	assert.Equal(t, []byte{0xbe, 0xef}, got.Packed)
 	assert.EqualValues(t, 600, got.TTL)
 
 	// Backend saves are rejected once the record is manual.
-	err = s.Save("pin.example.", 1, []byte{0xde, 0xad}, 300*time.Second, 0, 1)
+	err = s.Save("pin.example.", 1, []byte{0xde, 0xad}, 300*time.Second, 0, 1, "udp://1.1.1.1:53")
 	assert.ErrorIs(t, err, ErrManualRecord)
 	got, err = s.Lookup("pin.example.", 1)
 	require.NoError(t, err)
@@ -108,7 +110,7 @@ func TestManualSaveAtomicUnderConcurrentWrites(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for j := 0; j < 20; j++ {
-				_ = s.Save("race.example.", 1, []byte{0xde, 0xad}, 300*time.Second, 0, 1)
+				_ = s.Save("race.example.", 1, []byte{0xde, 0xad}, 300*time.Second, 0, 1, "udp://1.1.1.1:53")
 			}
 		}()
 	}
