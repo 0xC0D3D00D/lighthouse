@@ -1,0 +1,10 @@
+.git
+.github
+data/
+lighthouse
+web/node_modules
+web/.nuxt
+web/.output
+web/dist
+*.md
+Makefile

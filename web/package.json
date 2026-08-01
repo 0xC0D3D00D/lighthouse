@@ -1,0 +1,21 @@
+{
+  "name": "web",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt generate && rm -rf dist && cp -r .output/public dist",
+    "generate": "nuxt generate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@nuxt/ui": "^4.10.0",
+    "echarts": "^6.1.0",
+    "nuxt": "^4.5.1",
+    "vue-echarts": "^8.0.1"
+  },
+  "private": true
+}

@@ -1,0 +1,12 @@
+all: true
+dir: './generated/mocks/{{.InterfaceDirRelative | replaceAll "internal/" ""}}mock'
+pkgname: '{{.SrcPackageName}}mock'
+filename: 'mock_{{.InterfaceName}}.go'
+template: testify
+template-data:
+  unroll-variadic: true
+packages:
+  github.com/0xc0d3d00d/lighthouse/internal/resolver:
+  github.com/0xc0d3d00d/lighthouse/internal/health:
+  github.com/0xc0d3d00d/lighthouse/internal/dnsserver:
+  github.com/0xc0d3d00d/lighthouse/internal/httpserver/api:
