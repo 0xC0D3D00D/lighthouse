@@ -43,11 +43,9 @@ func startBackend(t *testing.T, empty bool) string {
 		}),
 	}
 	go func() { _ = srv.ListenAndServe() }()
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		srv.Shutdown(ctx)
-	})
+	// Closing the listener stops the server; dns.Server.Shutdown races with a
+	// concurrently starting ListenAndServe, so it is deliberately avoided here.
+	t.Cleanup(func() { _ = pc.Close() })
 	return pc.LocalAddr().String()
 }
 
