@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"log/slog"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -55,15 +56,26 @@ func New(prober Prober, opts Options, log *slog.Logger) *Service {
 func (s *Service) Run(ctx context.Context) {
 	ticker := time.NewTicker(s.opts.Interval)
 	defer ticker.Stop()
-	s.probe(ctx)
+	s.safeProbe(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.probe(ctx)
+			s.safeProbe(ctx)
 		}
 	}
+}
+
+// safeProbe keeps a panicking probe from killing the process: Run executes in
+// its own goroutine, so an unrecovered panic here would be fatal.
+func (s *Service) safeProbe(ctx context.Context) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			s.log.Error("panic in beacon probe", "panic", rec, "stack", string(debug.Stack()))
+		}
+	}()
+	s.probe(ctx)
 }
 
 func (s *Service) probe(ctx context.Context) {

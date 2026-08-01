@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"log/slog"
 	"net/http"
 	"time"
@@ -127,7 +128,17 @@ func (s *Server) handler(proto string) dns.Handler {
 }
 
 // answer resolves the request and returns the packed response bytes.
-func (s *Server) answer(ctx context.Context, proto string, r *dns.Msg) []byte {
+// A panic anywhere in the resolve path is answered with SERVFAIL instead of
+// crashing the process: the dns library does not recover handler panics.
+func (s *Server) answer(ctx context.Context, proto string, r *dns.Msg) (out []byte) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			s.stats.RecordError()
+			metrics.FrontendErrors.WithLabelValues(proto).Inc()
+			s.log.Error("panic while answering query", "proto", proto, "panic", rec, "stack", string(debug.Stack()))
+			out = packedError(r, dns.RcodeServerFailure)
+		}
+	}()
 	metrics.FrontendQueries.WithLabelValues(proto).Inc()
 
 	if len(r.Question) == 0 {
@@ -149,7 +160,7 @@ func (s *Server) answer(ctx context.Context, proto string, r *dns.Msg) []byte {
 	s.stats.RecordQuery(res.Source == "cache")
 
 	// Rewrite the stored/backend message ID with the client's ID.
-	out := make([]byte, len(res.Packed))
+	out = make([]byte, len(res.Packed))
 	copy(out, res.Packed)
 	if len(out) >= 2 {
 		out[0] = byte(r.ID >> 8)

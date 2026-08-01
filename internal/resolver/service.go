@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -177,6 +178,14 @@ func (s *Service) fanOut(ctx context.Context, name string, qtype uint16) (model.
 	ch := make(chan answer, len(backends))
 	for _, up := range backends {
 		go func(up model.Backend) {
+			// A panic in an unrecovered goroutine kills the process; report it
+			// as a backend failure instead.
+			defer func() {
+				if rec := recover(); rec != nil {
+					s.log.Error("panic querying backend", "backend", up.Name(), "panic", rec, "stack", string(debug.Stack()))
+					ch <- answer{err: fmt.Errorf("%s: panic: %v", up.Name(), rec)}
+				}
+			}()
 			metrics.BackendQueries.WithLabelValues(up.Name()).Inc()
 			resp, err := s.client.Query(ctx, up, name, qtype)
 			if err != nil {
@@ -219,6 +228,12 @@ func (s *Service) Probe(ctx context.Context, name string, qtype uint16) map[stri
 	ch := make(chan probe, len(s.backends))
 	for _, up := range s.backends {
 		go func(up model.Backend) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					s.log.Error("panic probing backend", "backend", up.Name(), "panic", rec, "stack", string(debug.Stack()))
+					ch <- probe{name: up.Name(), ok: false}
+				}
+			}()
 			resp, err := s.client.Query(ctx, up, name, qtype)
 			ch <- probe{name: up.Name(), ok: err == nil && resp.Rcode == dns.RcodeSuccess && len(resp.Answer) > 0}
 		}(up)
