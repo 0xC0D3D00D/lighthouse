@@ -37,6 +37,80 @@ func (_m *MockRecordBook) EXPECT() *MockRecordBook_Expecter {
 	return &MockRecordBook_Expecter{mock: &_m.Mock}
 }
 
+// LookupManualPacked provides a mock function for the type MockRecordBook
+func (_mock *MockRecordBook) LookupManualPacked(name string, qtype uint16) ([]byte, time.Duration, bool) {
+	ret := _mock.Called(name, qtype)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LookupManualPacked")
+	}
+
+	var r0 []byte
+	var r1 time.Duration
+	var r2 bool
+	if returnFunc, ok := ret.Get(0).(func(string, uint16) ([]byte, time.Duration, bool)); ok {
+		return returnFunc(name, qtype)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string, uint16) []byte); ok {
+		r0 = returnFunc(name, qtype)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]byte)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string, uint16) time.Duration); ok {
+		r1 = returnFunc(name, qtype)
+	} else {
+		r1 = ret.Get(1).(time.Duration)
+	}
+	if returnFunc, ok := ret.Get(2).(func(string, uint16) bool); ok {
+		r2 = returnFunc(name, qtype)
+	} else {
+		r2 = ret.Get(2).(bool)
+	}
+	return r0, r1, r2
+}
+
+// MockRecordBook_LookupManualPacked_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LookupManualPacked'
+type MockRecordBook_LookupManualPacked_Call struct {
+	*mock.Call
+}
+
+// LookupManualPacked is a helper method to define mock.On call
+//   - name string
+//   - qtype uint16
+func (_e *MockRecordBook_Expecter) LookupManualPacked(name any, qtype any) *MockRecordBook_LookupManualPacked_Call {
+	return &MockRecordBook_LookupManualPacked_Call{Call: _e.mock.On("LookupManualPacked", name, qtype)}
+}
+
+func (_c *MockRecordBook_LookupManualPacked_Call) Run(run func(name string, qtype uint16)) *MockRecordBook_LookupManualPacked_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		var arg1 uint16
+		if args[1] != nil {
+			arg1 = args[1].(uint16)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRecordBook_LookupManualPacked_Call) Return(packed []byte, ttl time.Duration, ok bool) *MockRecordBook_LookupManualPacked_Call {
+	_c.Call.Return(packed, ttl, ok)
+	return _c
+}
+
+func (_c *MockRecordBook_LookupManualPacked_Call) RunAndReturn(run func(name string, qtype uint16) ([]byte, time.Duration, bool)) *MockRecordBook_LookupManualPacked_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // LookupPacked provides a mock function for the type MockRecordBook
 func (_mock *MockRecordBook) LookupPacked(name string, qtype uint16) ([]byte, bool) {
 	ret := _mock.Called(name, qtype)

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/0xc0d3d00d/lighthouse/generated/mocks/resolvermock"
+	rbmodel "github.com/0xc0d3d00d/lighthouse/internal/recordbook/model"
 	"github.com/0xc0d3d00d/lighthouse/internal/resolver"
 	"github.com/0xc0d3d00d/lighthouse/internal/resolver/backend"
 	"github.com/0xc0d3d00d/lighthouse/internal/resolver/model"
@@ -85,6 +86,7 @@ func TestResolveFanOutStoresResult(t *testing.T) {
 	svc, m := newService(t, []string{addr})
 
 	m.cache.EXPECT().Get("example.com.", dns.TypeA).Return(nil, false)
+	m.book.EXPECT().LookupManualPacked("example.com.", dns.TypeA).Return(nil, 0, false)
 	m.health.EXPECT().Survival().Return(false)
 	m.cache.EXPECT().Set("example.com.", dns.TypeA, mock.Anything, 300*time.Second).Return()
 	m.book.EXPECT().Save("example.com.", dns.TypeA, mock.Anything, 300*time.Second, uint16(dns.RcodeSuccess), 1).Return(nil)
@@ -102,6 +104,7 @@ func TestResolvePrefersNonEmpty(t *testing.T) {
 	svc, m := newService(t, []string{emptyAddr, fullAddr})
 
 	m.cache.EXPECT().Get("example.com.", dns.TypeA).Return(nil, false)
+	m.book.EXPECT().LookupManualPacked("example.com.", dns.TypeA).Return(nil, 0, false)
 	m.health.EXPECT().Survival().Return(false)
 	m.cache.EXPECT().Set("example.com.", dns.TypeA, mock.Anything, mock.Anything).Return()
 	m.book.EXPECT().Save("example.com.", dns.TypeA, mock.Anything, mock.Anything, mock.Anything, 1).Return(nil)
@@ -116,6 +119,7 @@ func TestResolveAllEmptyServesEmpty(t *testing.T) {
 	svc, m := newService(t, []string{addr})
 
 	m.cache.EXPECT().Get("example.com.", dns.TypeA).Return(nil, false)
+	m.book.EXPECT().LookupManualPacked("example.com.", dns.TypeA).Return(nil, 0, false)
 	m.health.EXPECT().Survival().Return(false)
 	// No cache.Set / book.Save expectations: empty answers must not be stored
 	// when StoreNegative is off; mockery fails the test on unexpected calls.
@@ -129,6 +133,7 @@ func TestResolveSurvivalServesRecordBook(t *testing.T) {
 	svc, m := newService(t, []string{"127.0.0.1:1"})
 
 	m.cache.EXPECT().Get("example.com.", dns.TypeA).Return(nil, false)
+	m.book.EXPECT().LookupManualPacked("example.com.", dns.TypeA).Return(nil, 0, false)
 	m.health.EXPECT().Survival().Return(true)
 	m.book.EXPECT().LookupPacked("example.com.", dns.TypeA).Return([]byte{0x01}, true)
 
@@ -138,10 +143,35 @@ func TestResolveSurvivalServesRecordBook(t *testing.T) {
 	assert.True(t, res.Stale)
 }
 
+func TestResolveServesManualRecord(t *testing.T) {
+	// No reachable backend: the manual record must be served without fan-out.
+	svc, m := newService(t, []string{"127.0.0.1:1"})
+
+	m.cache.EXPECT().Get("pin.example.", dns.TypeA).Return(nil, false)
+	m.book.EXPECT().LookupManualPacked("pin.example.", dns.TypeA).Return([]byte{0x02}, 600*time.Second, true)
+	m.cache.EXPECT().Set("pin.example.", dns.TypeA, []byte{0x02}, 600*time.Second).Return()
+
+	res, err := svc.Resolve(context.Background(), "pin.example.", dns.TypeA)
+	require.NoError(t, err)
+	assert.Equal(t, "manual", res.Source)
+	assert.Equal(t, []byte{0x02}, res.Packed)
+}
+
+func TestRequeryRejectsManualRecord(t *testing.T) {
+	svc, m := newService(t, []string{"127.0.0.1:1"})
+
+	m.health.EXPECT().Survival().Return(false)
+	m.book.EXPECT().LookupManualPacked("pin.example.", dns.TypeA).Return([]byte{0x02}, 600*time.Second, true)
+
+	_, err := svc.Requery(context.Background(), "pin.example.", dns.TypeA)
+	assert.ErrorIs(t, err, rbmodel.ErrManualRecord)
+}
+
 func TestResolveSurvivalMissErrors(t *testing.T) {
 	svc, m := newService(t, []string{"127.0.0.1:1"})
 
 	m.cache.EXPECT().Get("missing.example.", dns.TypeA).Return(nil, false)
+	m.book.EXPECT().LookupManualPacked("missing.example.", dns.TypeA).Return(nil, 0, false)
 	m.health.EXPECT().Survival().Return(true)
 	m.book.EXPECT().LookupPacked("missing.example.", dns.TypeA).Return(nil, false)
 

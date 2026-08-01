@@ -1,6 +1,7 @@
 package recordbook
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -48,6 +49,83 @@ func TestSaveOverwriteKeepsCount(t *testing.T) {
 	s := newService(t)
 	save(t, s, "a.example.", 1)
 	save(t, s, "a.example.", 1)
+	assert.EqualValues(t, 1, s.Count())
+}
+
+func TestSaveManualOverwritesAndPins(t *testing.T) {
+	s := newService(t)
+	save(t, s, "pin.example.", 1)
+
+	require.NoError(t, s.SaveManual("pin.example.", 1, []byte{0xbe, 0xef}, 600*time.Second, 1))
+	assert.EqualValues(t, 1, s.Count())
+
+	got, err := s.Lookup("pin.example.", 1)
+	require.NoError(t, err)
+	assert.True(t, got.Manual)
+	assert.Equal(t, []byte{0xbe, 0xef}, got.Packed)
+	assert.EqualValues(t, 600, got.TTL)
+
+	// Backend saves are rejected once the record is manual.
+	err = s.Save("pin.example.", 1, []byte{0xde, 0xad}, 300*time.Second, 0, 1)
+	assert.ErrorIs(t, err, ErrManualRecord)
+	got, err = s.Lookup("pin.example.", 1)
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0xbe, 0xef}, got.Packed)
+
+	packed, ttl, ok := s.LookupManualPacked("pin.example.", 1)
+	require.True(t, ok)
+	assert.Equal(t, []byte{0xbe, 0xef}, packed)
+	assert.Equal(t, 600*time.Second, ttl)
+
+	// A later manual save still overwrites.
+	require.NoError(t, s.SaveManual("pin.example.", 1, []byte{0xca, 0xfe}, 60*time.Second, 1))
+	packed, _, ok = s.LookupManualPacked("pin.example.", 1)
+	require.True(t, ok)
+	assert.Equal(t, []byte{0xca, 0xfe}, packed)
+
+	// Deleting clears the pin; backend saves work again.
+	require.NoError(t, s.Delete("pin.example.", 1))
+	_, _, ok = s.LookupManualPacked("pin.example.", 1)
+	assert.False(t, ok)
+	save(t, s, "pin.example.", 1)
+}
+
+func TestLookupManualPackedIgnoresBackendRecords(t *testing.T) {
+	s := newService(t)
+	save(t, s, "plain.example.", 1)
+	_, _, ok := s.LookupManualPacked("plain.example.", 1)
+	assert.False(t, ok)
+}
+
+func TestManualSaveAtomicUnderConcurrentWrites(t *testing.T) {
+	s := newService(t)
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for j := 0; j < 20; j++ {
+				_ = s.Save("race.example.", 1, []byte{0xde, 0xad}, 300*time.Second, 0, 1)
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		require.NoError(t, s.SaveManual("race.example.", 1, []byte{0xbe, 0xef}, 600*time.Second, 1))
+	}()
+	close(start)
+	wg.Wait()
+
+	// The manual record wins: every backend save that ran after it was rejected.
+	got, err := s.Lookup("race.example.", 1)
+	require.NoError(t, err)
+	assert.True(t, got.Manual)
+	assert.Equal(t, []byte{0xbe, 0xef}, got.Packed)
 	assert.EqualValues(t, 1, s.Count())
 }
 

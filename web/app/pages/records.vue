@@ -8,6 +8,7 @@ interface RecordView {
   answer_count: number
   answers: string[] | null
   expired: boolean
+  manual: boolean
 }
 
 const QTYPES: Record<number, string> = {
@@ -73,6 +74,39 @@ async function requery(rec: RecordView) {
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / pageSize)))
+
+const addOpen = ref(false)
+const addBusy = ref(false)
+const addForm = reactive({ name: '', qtype: 'A', ttl: 300, values: '' })
+
+async function addRecord() {
+  const values = addForm.values.split('\n').map(v => v.trim()).filter(Boolean)
+  if (!addForm.name.trim() || !values.length) {
+    toast.add({ title: 'Name and at least one value are required', color: 'error' })
+    return
+  }
+  addBusy.value = true
+  try {
+    await $fetch('/api/records', {
+      method: 'POST',
+      body: {
+        name: addForm.name.trim(),
+        qtype: addForm.qtype,
+        ttl: Number(addForm.ttl) || 300,
+        values,
+      },
+    })
+    toast.add({ title: `Added ${addForm.name.trim()} ${addForm.qtype}`, description: 'Manual record pinned as source of truth', color: 'success' })
+    addOpen.value = false
+    addForm.name = ''
+    addForm.values = ''
+    await refresh()
+  } catch (e: any) {
+    toast.add({ title: 'Add failed', description: String(e?.data?.error ?? e), color: 'error' })
+  } finally {
+    addBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -87,6 +121,9 @@ const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0)
       <USelect v-model="qtype" :items="qtypeOptions" class="w-32" />
       <UButton icon="i-lucide-refresh-cw" variant="ghost" :loading="status === 'pending'" @click="() => refresh()">
         Refresh
+      </UButton>
+      <UButton icon="i-lucide-plus" @click="addOpen = true">
+        Add record
       </UButton>
       <div class="ms-auto text-sm text-muted">{{ data?.total ?? 0 }} records</div>
     </div>
@@ -110,7 +147,10 @@ const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0)
             class="border-b border-default last:border-0 align-top"
           >
             <td class="px-4 py-2 font-mono">{{ rec.name }}</td>
-            <td class="px-4 py-2"><UBadge variant="subtle">{{ qtypeName(rec.qtype) }}</UBadge></td>
+            <td class="px-4 py-2">
+              <UBadge variant="subtle">{{ qtypeName(rec.qtype) }}</UBadge>
+              <UBadge v-if="rec.manual" color="info" variant="subtle" class="ms-1">manual</UBadge>
+            </td>
             <td class="px-4 py-2 font-mono text-xs whitespace-pre-line max-w-md truncate">
               {{ rec.answers?.length ? rec.answers.join('\n') : '—' }}
             </td>
@@ -121,6 +161,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0)
             <td class="px-4 py-2 text-muted">{{ new Date(rec.queried_at).toLocaleString() }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               <UButton
+                v-if="!rec.manual"
                 icon="i-lucide-rotate-cw"
                 size="xs"
                 variant="ghost"
@@ -149,5 +190,36 @@ const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0)
       <span class="text-sm text-muted">page {{ page }} / {{ totalPages }}</span>
       <UButton icon="i-lucide-chevron-right" variant="ghost" :disabled="page >= totalPages" @click="page++" />
     </div>
+
+    <UModal v-model:open="addOpen" title="Add manual record">
+      <template #body>
+        <form class="space-y-4" @submit.prevent="addRecord">
+          <UFormField label="Name" help="Fully qualified name; a trailing dot is added if missing.">
+            <UInput v-model="addForm.name" placeholder="app.internal.example.com" class="w-full" autofocus />
+          </UFormField>
+          <div class="flex gap-3">
+            <UFormField label="Type" class="w-32">
+              <USelect v-model="addForm.qtype" :items="Object.values(QTYPES)" />
+            </UFormField>
+            <UFormField label="TTL (seconds)" class="flex-1">
+              <UInput v-model.number="addForm.ttl" type="number" min="1" />
+            </UFormField>
+          </div>
+          <UFormField label="Values" help="One value per line, in zone-file rdata syntax (e.g. 10.0.0.5, or “10 mail.example.com.” for MX).">
+            <UTextarea v-model="addForm.values" :rows="3" placeholder="10.0.0.5" class="w-full font-mono" />
+          </UFormField>
+          <p class="text-xs text-muted">
+            Manual records are pinned as the source of truth: they overwrite the stored record for this
+            name/type, are served without querying backends, and backend answers can no longer replace them.
+          </p>
+        </form>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton variant="ghost" color="neutral" :disabled="addBusy" @click="addOpen = false">Cancel</UButton>
+          <UButton :loading="addBusy" @click="addRecord">Add record</UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

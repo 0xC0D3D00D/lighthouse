@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"codeberg.org/miekg/dns"
 
 	"github.com/0xc0d3d00d/lighthouse/internal/metrics"
+	rbmodel "github.com/0xc0d3d00d/lighthouse/internal/recordbook/model"
 	"github.com/0xc0d3d00d/lighthouse/internal/resolver/model"
 	"github.com/0xc0d3d00d/lighthouse/internal/resolver/backend"
 )
@@ -23,6 +25,7 @@ type Cache interface {
 type RecordBook interface {
 	Save(name string, qtype uint16, packed []byte, ttl time.Duration, rcode uint16, answers int) error
 	LookupPacked(name string, qtype uint16) (packed []byte, ok bool)
+	LookupManualPacked(name string, qtype uint16) (packed []byte, ttl time.Duration, ok bool)
 }
 
 // Health is the resolver's view of the beacon health service (implemented by an adapter).
@@ -64,6 +67,13 @@ func (s *Service) Resolve(ctx context.Context, name string, qtype uint16) (model
 		return model.Result{Packed: packed, Source: "cache"}, nil
 	}
 
+	// Manually added records are the source of truth: serve them without
+	// consulting backends, in normal and survival mode alike.
+	if packed, ttl, ok := s.recordBook.LookupManualPacked(name, qtype); ok {
+		s.cache.Set(name, qtype, packed, ttl)
+		return model.Result{Packed: packed, Source: "manual"}, nil
+	}
+
 	if s.health.Survival() {
 		if packed, ok := s.recordBook.LookupPacked(name, qtype); ok {
 			return model.Result{Packed: packed, Source: "recordbook", Stale: true}, nil
@@ -80,7 +90,7 @@ func (s *Service) Resolve(ctx context.Context, name string, qtype uint16) (model
 		s.cache.Set(name, qtype, res.Packed, res.TTL)
 	}
 	if res.AnswerCount > 0 || s.storeNeg {
-		if err := s.recordBook.Save(name, qtype, res.Packed, res.TTL, res.Rcode, res.AnswerCount); err != nil {
+		if err := s.recordBook.Save(name, qtype, res.Packed, res.TTL, res.Rcode, res.AnswerCount); err != nil && !errors.Is(err, rbmodel.ErrManualRecord) {
 			s.log.Warn("record book save failed", "name", name, "qtype", qtype, "err", err)
 		}
 	}
@@ -89,9 +99,13 @@ func (s *Service) Resolve(ctx context.Context, name string, qtype uint16) (model
 
 // Requery bypasses the cache and record book and queries backends directly,
 // refreshing both stores on success. Used by the dashboard's live re-query.
+// Manually added records cannot be re-queried; delete them first.
 func (s *Service) Requery(ctx context.Context, name string, qtype uint16) (model.Result, error) {
 	if s.health.Survival() {
 		return model.Result{}, fmt.Errorf("survival mode: backend queries are disabled")
+	}
+	if _, _, ok := s.recordBook.LookupManualPacked(name, qtype); ok {
+		return model.Result{}, fmt.Errorf("%s/%d: %w", name, qtype, rbmodel.ErrManualRecord)
 	}
 	res, err := s.fanOut(ctx, name, qtype)
 	if err != nil {
@@ -102,6 +116,9 @@ func (s *Service) Requery(ctx context.Context, name string, qtype uint16) (model
 	}
 	if res.AnswerCount > 0 || s.storeNeg {
 		if err := s.recordBook.Save(name, qtype, res.Packed, res.TTL, res.Rcode, res.AnswerCount); err != nil {
+			if errors.Is(err, rbmodel.ErrManualRecord) {
+				return model.Result{}, fmt.Errorf("%s/%d: %w", name, qtype, rbmodel.ErrManualRecord)
+			}
 			s.log.Warn("record book save failed", "name", name, "qtype", qtype, "err", err)
 		}
 	}

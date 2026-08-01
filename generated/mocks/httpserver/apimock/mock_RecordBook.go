@@ -5,6 +5,8 @@
 package apimock
 
 import (
+	"time"
+
 	"github.com/0xc0d3d00d/lighthouse/internal/recordbook/model"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -285,6 +287,81 @@ func (_c *MockRecordBook_Lookup_Call) Return(record model.Record, err error) *Mo
 }
 
 func (_c *MockRecordBook_Lookup_Call) RunAndReturn(run func(name string, qtype uint16) (model.Record, error)) *MockRecordBook_Lookup_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SaveManual provides a mock function for the type MockRecordBook
+func (_mock *MockRecordBook) SaveManual(name string, qtype uint16, packed []byte, ttl time.Duration, answers int) error {
+	ret := _mock.Called(name, qtype, packed, ttl, answers)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SaveManual")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(string, uint16, []byte, time.Duration, int) error); ok {
+		r0 = returnFunc(name, qtype, packed, ttl, answers)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockRecordBook_SaveManual_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SaveManual'
+type MockRecordBook_SaveManual_Call struct {
+	*mock.Call
+}
+
+// SaveManual is a helper method to define mock.On call
+//   - name string
+//   - qtype uint16
+//   - packed []byte
+//   - ttl time.Duration
+//   - answers int
+func (_e *MockRecordBook_Expecter) SaveManual(name any, qtype any, packed any, ttl any, answers any) *MockRecordBook_SaveManual_Call {
+	return &MockRecordBook_SaveManual_Call{Call: _e.mock.On("SaveManual", name, qtype, packed, ttl, answers)}
+}
+
+func (_c *MockRecordBook_SaveManual_Call) Run(run func(name string, qtype uint16, packed []byte, ttl time.Duration, answers int)) *MockRecordBook_SaveManual_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		var arg1 uint16
+		if args[1] != nil {
+			arg1 = args[1].(uint16)
+		}
+		var arg2 []byte
+		if args[2] != nil {
+			arg2 = args[2].([]byte)
+		}
+		var arg3 time.Duration
+		if args[3] != nil {
+			arg3 = args[3].(time.Duration)
+		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRecordBook_SaveManual_Call) Return(err error) *MockRecordBook_SaveManual_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockRecordBook_SaveManual_Call) RunAndReturn(run func(name string, qtype uint16, packed []byte, ttl time.Duration, answers int) error) *MockRecordBook_SaveManual_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -4,6 +4,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -30,6 +32,7 @@ type Stats interface {
 type RecordBook interface {
 	List(prefix string, qtype uint16, offset, limit int) ([]rbmodel.Record, int, error)
 	Lookup(name string, qtype uint16) (rbmodel.Record, error)
+	SaveManual(name string, qtype uint16, packed []byte, ttl time.Duration, answers int) error
 	Delete(name string, qtype uint16) error
 	Count() int64
 }
@@ -62,6 +65,7 @@ func New(addr string, h Health, st Stats, book RecordBook, r Resolver, c Cache, 
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("GET /api/records", s.handleListRecords)
+	mux.HandleFunc("POST /api/records", s.handleAddRecord)
 	mux.HandleFunc("DELETE /api/records", s.handleDeleteRecord)
 	mux.HandleFunc("POST /api/records/requery", s.handleRequery)
 
@@ -135,7 +139,8 @@ func toView(rec rbmodel.Record) recordView {
 			v.Answers = append(v.Answers, rr.String())
 		}
 	}
-	v.Expired = time.Since(rec.QueriedAt) > time.Duration(rec.TTL)*time.Second
+	// Manual records are the source of truth and never expire.
+	v.Expired = !rec.Manual && time.Since(rec.QueriedAt) > time.Duration(rec.TTL)*time.Second
 	return v
 }
 
@@ -159,6 +164,94 @@ func (s *Server) handleListRecords(w http.ResponseWriter, req *http.Request) {
 		views = append(views, toView(rec))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"records": views, "total": total})
+}
+
+type addRecordRequest struct {
+	Name   string   `json:"name"`
+	Qtype  string   `json:"qtype"`
+	TTL    uint32   `json:"ttl"`
+	Values []string `json:"values"`
+}
+
+// handleAddRecord stores an operator-supplied record in the record book. The
+// record is marked manual: it overwrites the stored record for its key and
+// backend answers can no longer replace it.
+func (s *Server) handleAddRecord(w http.ResponseWriter, req *http.Request) {
+	var body addRecordRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	name := strings.ToLower(strings.TrimSpace(body.Name))
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if !strings.HasSuffix(name, ".") {
+		name += "."
+	}
+	qtype := dns.StringToType[strings.ToUpper(strings.TrimSpace(body.Qtype))]
+	if qtype == 0 {
+		writeErr(w, http.StatusBadRequest, "unknown record type: "+body.Qtype)
+		return
+	}
+	ttl := body.TTL
+	if ttl == 0 {
+		ttl = 300
+	}
+	if len(body.Values) == 0 {
+		writeErr(w, http.StatusBadRequest, "at least one value is required")
+		return
+	}
+
+	msg := &dns.Msg{}
+	msg.Response = true
+	msg.Authoritative = true
+	msg.RecursionAvailable = true
+	msg.Rcode = dns.RcodeSuccess
+	newRR, ok := dns.TypeToRR[qtype]
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "unsupported record type: "+body.Qtype)
+		return
+	}
+	qrr := newRR()
+	qrr.Header().Name = name
+	qrr.Header().Class = dns.ClassINET
+	msg.Question = []dns.RR{qrr}
+	for _, val := range body.Values {
+		val = strings.TrimSpace(val)
+		if val == "" {
+			continue
+		}
+		rr, err := dns.New(fmt.Sprintf("%s %d IN %s %s", name, ttl, dns.TypeToString[qtype], val))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid %s value %q: %v", dns.TypeToString[qtype], val, err))
+			return
+		}
+		msg.Answer = append(msg.Answer, rr)
+	}
+	if len(msg.Answer) == 0 {
+		writeErr(w, http.StatusBadRequest, "at least one value is required")
+		return
+	}
+	if err := msg.Pack(); err != nil {
+		writeErr(w, http.StatusBadRequest, "pack record: "+err.Error())
+		return
+	}
+
+	if err := s.book.SaveManual(name, qtype, msg.Data, time.Duration(ttl)*time.Second, len(msg.Answer)); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Evict any cached backend answer so the manual record is served immediately.
+	s.cache.Delete(name, qtype)
+
+	rec, err := s.book.Lookup(name, qtype)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, toView(rec))
 }
 
 func recordKeyParams(req *http.Request) (string, uint16, bool) {
@@ -193,6 +286,10 @@ func (s *Server) handleRequery(w http.ResponseWriter, req *http.Request) {
 	}
 	res, err := s.resolver.Requery(req.Context(), name, qtype)
 	if err != nil {
+		if errors.Is(err, rbmodel.ErrManualRecord) {
+			writeErr(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
