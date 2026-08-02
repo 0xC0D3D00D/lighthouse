@@ -78,7 +78,37 @@ const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0)
 
 const addOpen = ref(false)
 const addBusy = ref(false)
+const editing = ref(false)
 const addForm = reactive({ name: '', qtype: 'A', ttl: 300, values: '' })
+
+function openAdd() {
+  editing.value = false
+  addForm.name = ''
+  addForm.qtype = 'A'
+  addForm.ttl = 300
+  addForm.values = ''
+  addOpen.value = true
+}
+
+// rdataOf extracts the rdata from a zone-file RR string
+// ("name ttl class type rdata..."), or null when the type doesn't match.
+function rdataOf(rr: string, type: string): string | null {
+  const parts = rr.trim().split(/\s+/)
+  if (parts.length < 5 || parts[3] !== type) return null
+  return parts.slice(4).join(' ')
+}
+
+function openEdit(rec: RecordView) {
+  editing.value = true
+  addForm.name = rec.name
+  addForm.qtype = qtypeName(rec.qtype)
+  addForm.ttl = rec.ttl || 300
+  addForm.values = (rec.answers ?? [])
+    .map(rr => rdataOf(rr, qtypeName(rec.qtype)))
+    .filter((v): v is string => v !== null)
+    .join('\n')
+  addOpen.value = true
+}
 
 async function addRecord() {
   const values = addForm.values.split('\n').map(v => v.trim()).filter(Boolean)
@@ -97,7 +127,7 @@ async function addRecord() {
         values,
       },
     })
-    toast.add({ title: `Added ${addForm.name.trim()} ${addForm.qtype}`, description: 'Manual record pinned as source of truth', color: 'success' })
+    toast.add({ title: `${editing.value ? 'Saved' : 'Added'} ${addForm.name.trim()} ${addForm.qtype}`, description: 'Manual record pinned as source of truth', color: 'success' })
     addOpen.value = false
     addForm.name = ''
     addForm.values = ''
@@ -123,7 +153,7 @@ async function addRecord() {
       <UButton icon="i-lucide-refresh-cw" variant="ghost" :loading="status === 'pending'" @click="() => refresh()">
         Refresh
       </UButton>
-      <UButton icon="i-lucide-plus" @click="addOpen = true">
+      <UButton icon="i-lucide-plus" @click="openAdd">
         Add record
       </UButton>
       <div class="ms-auto text-sm text-muted">{{ data?.total ?? 0 }} records</div>
@@ -155,15 +185,18 @@ async function addRecord() {
             <td class="px-4 py-2 font-mono text-xs whitespace-pre-line max-w-md truncate">
               {{ rec.answers?.length ? rec.answers.join('\n') : '—' }}
             </td>
-            <td class="px-4 py-2">
-              <span :class="rec.expired ? 'text-error' : ''">{{ rec.ttl }}s</span>
-              <UBadge v-if="rec.expired" color="warning" variant="subtle" class="ms-1">expired</UBadge>
-            </td>
+            <td class="px-4 py-2">{{ rec.ttl }}s</td>
             <td class="px-4 py-2 font-mono text-xs text-muted">{{ rec.source || '—' }}</td>
             <td class="px-4 py-2 text-muted">{{ new Date(rec.queried_at).toLocaleString() }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               <UButton
-                v-if="!rec.manual"
+                icon="i-lucide-pencil"
+                size="xs"
+                variant="ghost"
+                :disabled="busy !== null"
+                @click="openEdit(rec)"
+              />
+              <UButton
                 icon="i-lucide-rotate-cw"
                 size="xs"
                 variant="ghost"
@@ -193,15 +226,15 @@ async function addRecord() {
       <UButton icon="i-lucide-chevron-right" variant="ghost" :disabled="page >= totalPages" @click="page++" />
     </div>
 
-    <UModal v-model:open="addOpen" title="Add manual record">
+    <UModal v-model:open="addOpen" :title="editing ? 'Edit record (overwrite as manual)' : 'Add manual record'">
       <template #body>
         <form class="space-y-4" @submit.prevent="addRecord">
           <UFormField label="Name" help="Fully qualified name; a trailing dot is added if missing.">
-            <UInput v-model="addForm.name" placeholder="app.internal.example.com" class="w-full" autofocus />
+            <UInput v-model="addForm.name" placeholder="app.internal.example.com" class="w-full" :disabled="editing" :autofocus="!editing" />
           </UFormField>
           <div class="flex gap-3">
             <UFormField label="Type" class="w-32">
-              <USelect v-model="addForm.qtype" :items="Object.values(QTYPES)" />
+              <USelect v-model="addForm.qtype" :items="Object.values(QTYPES)" :disabled="editing" />
             </UFormField>
             <UFormField label="TTL (seconds)" class="flex-1">
               <UInput v-model.number="addForm.ttl" type="number" min="1" />
@@ -219,7 +252,7 @@ async function addRecord() {
       <template #footer>
         <div class="flex justify-end gap-2 w-full">
           <UButton variant="ghost" color="neutral" :disabled="addBusy" @click="addOpen = false">Cancel</UButton>
-          <UButton :loading="addBusy" @click="addRecord">Add record</UButton>
+          <UButton :loading="addBusy" @click="addRecord">{{ editing ? 'Save as manual' : 'Add record' }}</UButton>
         </div>
       </template>
     </UModal>
